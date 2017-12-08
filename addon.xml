@@ -1,15 +1,19 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="plugin.video.dmd-czech.stream"
        name="Stream TV Archiv"
-       version="1.2.7"
+       version="1.2.8"
        provider-name="Jiri Vyhnalek">
   <requires>
     <import addon="xbmc.python" version="2.1.0"/>
     <import addon="script.module.dmd-czech.common" version="1.5.5"/>
     <import addon="script.module.simplejson"/>
+    <import addon="script.module.requests"/>
   </requires>
   <extension point="xbmc.python.pluginsource" library="default.py">
     <provides>video</provides>
+  </extension>
+  <extension point="xbmc.python.library" library="favourites.py">
+      <provides />
   </extension>
   <extension point="xbmc.addon.metadata">
     <platform>all</platform>

@@ -5,6 +5,9 @@ import xbmcplugin,xbmcgui,xbmcaddon
 import simplejson as json
 from hashlib import md5
 from time import time
+from utils import html2text
+import sys
+import stream
 
 __baseurl__ = 'http://www.stream.cz/API'
 _UserAgent_ = 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.9.0.3) Gecko/2008092417 Firefox/3.0.3'
@@ -19,84 +22,15 @@ scriptname = addon.getAddonInfo('name')
 quality_index = int(addon.getSetting('quality'))
 quality_settings = ["ask", "240p", "360p", "480p", "720p", "1080p"]
 
+use_login = addon.getSetting('use_login') == 'true'
+
 MODE_LIST_SHOWS = 1
 MODE_LIST_SEASON = 2
 MODE_LIST_EPISODES = 3
 MODE_VIDEOLINK = 10
 MODE_RESOLVE_VIDEOLINK = 11
 MODE_LIST_NEXT_EPISODES = 12
-
-def replaceWords(text, word_dic):
-    rc = re.compile('|'.join(map(re.escape, word_dic)))
-    def translate(match):
-        return word_dic[match.group(0)]
-    return rc.sub(translate, text)
-
-WORD_DIC = {
-'\u00e1': 'á',
-'\u00e9': 'é',
-'\u00ed': 'í',
-'\u00fd': 'ý',
-'\u00f3': 'ó',
-'\u00fa': 'ú',
-'\u016f': 'ů',
-'\u011b': 'ě',
-'\u0161': 'š',
-'\u0165': 'ť',
-'\u010d': 'č',
-'\u0159': 'ř',
-'\u017e': 'ž',
-'\u010f': 'ď',
-'\u0148': 'ň',
-'\u00C0': 'Á',
-'\u00c9': 'É',
-'\u00cd': 'Í',
-'\u00d3': 'Ó',
-'\u00da': 'Ú',
-'\u016e': 'Ů',
-'\u0115': 'Ě',
-'\u0160': 'Š',
-'\u010c': 'Č',
-'\u0158': 'Ř',
-'\u0164': 'Ť',
-'\u017d': 'Ž',
-'\u010e': 'Ď',
-'\u0147': 'Ň',
-'\\xc3\\xa1': 'á',
-'\\xc4\\x97': 'é',
-'\\xc3\\xad': 'í',
-'\\xc3\\xbd': 'ý',
-'\\xc5\\xaf': 'ů',
-'\\xc4\\x9b': 'ě',
-'\\xc5\\xa1': 'š',
-'\\xc5\\xa4': 'ť',
-'\\xc4\\x8d': 'č',
-'\\xc5\\x99': 'ř',
-'\\xc5\\xbe': 'ž',
-'\\xc4\\x8f': 'ď',
-'\\xc5\\x88': 'ň',
-'\\xc5\\xae': 'Ů',
-'\\xc4\\x94': 'Ě',
-'\\xc5\\xa0': 'Š',
-'\\xc4\\x8c': 'Č',
-'\\xc5\\x98': 'Ř',
-'\\xc5\\xa4': 'Ť',
-'\\xc5\\xbd': 'Ž',
-'\\xc4\\x8e': 'Ď',
-'\\xc5\\x87': 'Ň',
-}
-
-REPL_DICT = {
-"&nbsp;": " ",
-"&amp;" : "&",
-"&quot;": "\"",
-"&lt;"  : "<",
-"&gt;"  : ">",
-"\n"    : "",
-"\r"    : "",
-"</b>"  : "[/B]",
-"</div>": "[CR]",
-}
+MODE_LIST_FAVOURITES = 13
 
 def getLS(strid):
     return addon.getLocalizedString(strid)
@@ -119,35 +53,21 @@ def logErr(msg):
 def makeImageUrl(rawurl):
     return 'http:'+rawurl.replace('{width}/{height}','360/360')
 
-def getJsonDataFromUrl(url):
-    req = urllib2.Request(url)
-    req.add_header('User-Agent', _UserAgent_)
-    req.add_header('Api-Password', md5('fb5f58a820353bd7095de526253c14fd'+url.split(__baseurl__)[1]+str(int(round(int(time())/3600.0/24.0)))).hexdigest())
-    response = urllib2.urlopen(req)
-    httpdata = response.read()
-    response.close()
-    httpdata = replaceWords(httpdata, WORD_DIC)
-    return json.loads(httpdata)
-
-def html2text(html):
-    rex = re.compile('|'.join(map(re.escape, REPL_DICT)))
-    def doReplace(matchobj):
-        return REPL_DICT[matchobj.group(0)]
-    text = rex.sub(doReplace, html)
-    text = re.sub("<b( .*?)*>", "[B]", text)
-    text = re.sub("<br( .*?)*>", "[CR]", text)
-    text = re.sub("<p( .*?)*>", "[CR]", text)
-    text = re.sub("<div( .*?)*>", "[CR]", text)
-    text = re.sub("<.*?>", "", text)
-    return text
-
 def listContent():
     addDir(getLS(30006),__baseurl__ + '/timeline/latest',MODE_LIST_EPISODES,icon)
     addDir(getLS(30007),__baseurl__ + '/catalogue',MODE_LIST_SHOWS,icon)
     addDir(getLS(30008),__baseurl__ + '/catalogue?channels=3',MODE_LIST_SHOWS,icon)
 
+    if use_login:
+        addDir(getLS(30015), __baseurl__ + '/timeline/favourites',MODE_LIST_FAVOURITES,icon)
+
 def listShows(url):
-    data = getJsonDataFromUrl(url)
+    data = stream.get_json(url)
+    items = []
+    favourites = []
+    ids = []
+    fairy_tales = 'channels' in url
+
     if type(data[u'_embedded'][u'stream:show']) is dict:
         data[u'_embedded'][u'stream:show'] = [data[u'_embedded'][u'stream:show']]
 
@@ -156,16 +76,65 @@ def listShows(url):
             link = __baseurl__+item[u'_links'][u'stream:backward'][u'href']
         else:
             link = __baseurl__+item[u'_links'][u'self'][u'href']
+
         image = makeImageUrl(item[u'image'])
         name = item[u'name']
-        addDir(name,link,MODE_LIST_SEASON,image)
+        ids.append(item['id'])
+        items.append((name, link, image, item['id']))
+
+    if use_login and not fairy_tales:
+        favourites = stream.query_favourites(ids)
+
+    for item in items:
+        name = item[0]
+        if item[3] in favourites:
+            name =  name + ' [LIGHT]*[/LIGHT]'
+
+        u=composePluginUrl(item[1], MODE_LIST_SEASON, 'name')
+        liz=xbmcgui.ListItem(name, iconImage="DefaultFolder.png", thumbnailImage=item[2])
+
+        liz.setInfo( type="Video", infoLabels={ "Title": name } )
+        liz.setProperty( "Fanart_Image", fanart )
+
+        if use_login and not fairy_tales:
+            container = composePluginUrl(url, MODE_LIST_SHOWS, 'nane')
+
+            if item[3] in favourites:
+                menuitems = [( getLS(30014).encode('utf-8'), 'RunScript(plugin.video.dmd-czech.stream, %s, %s, false)' % (container, item[3]))]
+            else:
+                menuitems = [( getLS(30013).encode('utf-8'), 'RunScript(plugin.video.dmd-czech.stream, %s, %s, true)' % (container, item[3]))]
+            liz.addContextMenuItems(menuitems)
+
+        xbmcplugin.addDirectoryItem(handle=addonHandle,url=u,listitem=liz,isFolder=True)
 
     if 'next' in data[u'_links'].keys():
         listShows(__baseurl__ + data[u'_links'][u'next'][u'href'])
+
     xbmcplugin.addSortMethod( handle=addonHandle, sortMethod=xbmcplugin.SORT_METHOD_LABEL)
 
+def listFavourites(url):
+    data = stream.authorized_request(url)
+
+    if not u'_embedded' in data:
+        return
+
+    if type(data[u'_embedded'][u'stream:episode']) is dict:
+        data[u'_embedded'][u'stream:episode'] = [data[u'_embedded'][u'stream:episode']]
+
+    for item in data[u'_embedded'][u'stream:episode']:
+        link = __baseurl__ + item[u'_links'][u'self'][u'href']
+
+        image = makeImageUrl(item[u'image'])
+        show = item['_embedded']['stream:show']['name']
+        name = '[LIGHT]%s[/LIGHT] | %s' % (show, item[u'name'])
+
+        addItem(name, link, MODE_RESOLVE_VIDEOLINK, image, False, islatest=False)
+
+    if 'next' in data[u'_links'].keys():
+        addDir(u'[B][COLOR blue]'+getLS(30004)+u' >>[/COLOR][/B]', __baseurl__ + data[u'_links']['next']['href'], MODE_LIST_FAVOURITES, nexticon)
+
 def listSeasons(url):
-    data = getJsonDataFromUrl(url)
+    data = stream.get_json(url)
     seasons = data[u'_embedded'][u'stream:season']
     if type(seasons) is dict:
         listSeasonEpisodes(seasons)
@@ -208,12 +177,12 @@ def listSeasonEpisodes(data, season_name='', islatest=False):
         addDir(u'[B][COLOR blue]'+getLS(30004)+u' >>[/COLOR][/B]',link,MODE_LIST_EPISODES,nexticon)
 
 def listEpisodes(url):
-    data = getJsonDataFromUrl(url)
+    data = stream.get_json(url)
     islatest='/timeline/latest' in url
     listSeasonEpisodes(data, '', islatest)
     
 def listNextEpisodes(url):
-    data = getJsonDataFromUrl(url)
+    data = stream.get_json(url)
     try:
         link = __baseurl__+data[u'_embedded'][u'stream:show'][u'_links'][u'self'][u'href']
         listSeasons(link)
@@ -221,7 +190,7 @@ def listNextEpisodes(url):
         logDbg('Další epizody nenalezeny')
 
 def videoLink(url,name):
-    data = getJsonDataFromUrl(url)
+    data = stream.get_json(url)
     name = data[u'name']
     thumb = makeImageUrl(data[u'image'])
     popis = html2text(data[u'detail'])
@@ -244,7 +213,7 @@ def videoLink(url,name):
         logDbg('Další epizody nenalezeny')
 
 def resolveVideoLink(url,name):
-    data = getJsonDataFromUrl(url)
+    data = stream.get_json(url)
     name = data[u'name']
     thumb = makeImageUrl(data[u'image'])
     popis = html2text(data[u'detail'])
@@ -371,33 +340,45 @@ logDbg("Mode: "+str(mode))
 logDbg("URL: "+str(url))
 logDbg("Name: "+str(name))
 
-if mode==None or url==None or len(url)<1:
-    STATS("OBSAH", "Function")
-    listContent()
-   
-elif mode==MODE_LIST_SHOWS:
-    STATS("LIST_SHOWS", "Function")
-    listShows(url)
+try:
+    if mode==None or url==None or len(url)<1:
+        STATS("OBSAH", "Function")
+        listContent()
 
-elif mode==MODE_LIST_SEASON:
-    STATS("LIST_SEASON", "Function")
-    listSeasons(url)
+    elif mode==MODE_LIST_SHOWS:
+        STATS("LIST_SHOWS", "Function")
+        listShows(url)
 
-elif mode==MODE_LIST_EPISODES:
-    STATS("LIST_EPISODES", "Function")
-    listEpisodes(url)
+    elif mode==MODE_LIST_SEASON:
+        STATS("LIST_SEASON", "Function")
+        listSeasons(url)
 
-elif mode==MODE_VIDEOLINK:
-    STATS(name, "Item")
-    videoLink(url,name)
+    elif mode==MODE_LIST_EPISODES:
+        STATS("LIST_EPISODES", "Function")
+        listEpisodes(url)
 
-elif mode==MODE_RESOLVE_VIDEOLINK:
-    resolveVideoLink(url,name)
-    STATS(name, "Item")
-    sys.exit(0)
+    elif mode==MODE_VIDEOLINK:
+        STATS(name, "Item")
+        videoLink(url,name)
 
-elif mode==MODE_LIST_NEXT_EPISODES:
-    STATS("LIST_NEXT_EPISODES", "Function")
-    listNextEpisodes(url)
-    
+    elif mode==MODE_RESOLVE_VIDEOLINK:
+        resolveVideoLink(url,name)
+        STATS(name, "Item")
+        sys.exit(0)
+
+    elif mode==MODE_LIST_NEXT_EPISODES:
+        STATS("LIST_NEXT_EPISODES", "Function")
+        listNextEpisodes(url)
+
+    elif mode==MODE_LIST_FAVOURITES:
+        STATS("LIST_FAVOURITES", "Function")
+        listFavourites(url)
+
+except stream.InvalidCredentials as e:
+    open_settings = xbmcgui.Dialog().yesno(addon.getAddonInfo('name'), getLS(30016), getLS(30017))
+
+    if open_settings:
+        addon.openSettings()
+
+
 xbmcplugin.endOfDirectory(addonHandle)

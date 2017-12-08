@@ -9,6 +9,15 @@
 	<string id="30006">Latest videos</string>
 	<string id="30007">All shows</string>
 	<string id="30008">Fairy tales</string>
+	<string id="30009">Login</string>
+	<string id="30010">Username (email)</string>
+	<string id="30011">Password</string>
+	<string id="30012">Enable login</string>
+	<string id="30013">Subscribe</string>
+	<string id="30014">Unsubscribe</string>
+	<string id="30015">Subscribed shows</string>
+	<string id="30016">Invalid crendentials</string>
+	<string id="30017">Would you like to open plugin settings?</string>
 	<string id="30240">240p</string>
 	<string id="30360">360p</string>
 	<string id="30480">480p</string>

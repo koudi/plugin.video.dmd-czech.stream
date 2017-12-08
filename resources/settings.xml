@@ -1,3 +1,11 @@
 <settings>
+    <setting type="lsep" label="30000" />
     <setting label="30000" id="quality" type="enum" lvalues="30001|30240|30360|30480|30720|31080" default="0" />
+
+    <setting type="lsep" label="30009" />
+    <setting label="30012" type="bool" id="use_login" default="false"/>
+    <setting label="30010" id="username" type="text" default="" enable="eq(-1,true)"
+        subsetting="true" />
+    <setting label="30011" id="password" type="text" option="hidden"
+        default="" enable="eq(-2,true)" subsetting="true"/>
 </settings>
